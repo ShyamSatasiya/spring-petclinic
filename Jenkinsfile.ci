@@ -84,25 +84,34 @@ pipeline {
     }
 
     stage('Login to ACR & Push') {
-      steps {
-        withCredentials([string(credentialsId: 'azure-sp-jenkins', variable: 'AZURE_CREDENTIALS_JSON')]) {
-          sh """
-            echo "$AZURE_CREDENTIALS_JSON" > azure.json
-            CLIENT_ID=$(jq -r .clientId azure.json)
-            CLIENT_SECRET=$(jq -r .clientSecret azure.json)
-            TENANT_ID=$(jq -r .tenantId azure.json)
-            SUBSCRIPTION_ID=$(jq -r .subscriptionId azure.json)
+  steps {
+    withCredentials([string(credentialsId: 'azure-sp-jenkins', variable: 'AZURE_CREDENTIALS_JSON')]) {
+      // pass Groovy env vars to the shell safely
+      withEnv([
+        "ACR_NAME=${env.ACR_NAME}",
+        "IMAGE_REF=${env.IMAGE_REF}"
+      ]) {
+        sh '''#!/usr/bin/env bash
+set -euo pipefail
 
-            az login --service-principal --username "$CLIENT_ID" --password "$CLIENT_SECRET" --tenant "$TENANT_ID" >/dev/null
-            az account set --subscription "$SUBSCRIPTION_ID"
+echo "$AZURE_CREDENTIALS_JSON" > azure.json
+CLIENT_ID=$(jq -r .clientId azure.json)
+CLIENT_SECRET=$(jq -r .clientSecret azure.json)
+TENANT_ID=$(jq -r .tenantId azure.json)
+SUBSCRIPTION_ID=$(jq -r .subscriptionId azure.json)
 
-            az acr login -n petclinicacr9999
-            docker push ${env.IMAGE_REF}
-            rm -f azure.json
-          """
-        }
+az login --service-principal --username "$CLIENT_ID" --password "$CLIENT_SECRET" --tenant "$TENANT_ID" >/dev/null
+az account set --subscription "$SUBSCRIPTION_ID"
+
+az acr login -n "$ACR_NAME"
+docker push "$IMAGE_REF"
+rm -f azure.json
+'''
       }
     }
+  }
+}
+
   }
 
   post {
