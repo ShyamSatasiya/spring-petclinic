@@ -85,7 +85,7 @@ pipeline {
 
     stage('Login to ACR & Push') {
       steps {
-        withCredentials([string(credentialsId: 'azure-sp-jenkins', variable: 'AZURE_CREDENTIALS_JSON')]]) {
+        withCredentials([string(credentialsId: 'azure-sp-jenkins', variable: 'AZURE_CREDENTIALS_JSON')]) {
           sh """
             echo "$AZURE_CREDENTIALS_JSON" > azure.json
             CLIENT_ID=$(jq -r .clientId azure.json)
