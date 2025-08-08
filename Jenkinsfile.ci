@@ -1,0 +1,116 @@
+pipeline {
+  agent any
+
+  options {
+    skipDefaultCheckout(true)
+    timestamps()
+    ansiColor('xterm')
+  }
+
+  tools {
+    jdk 'jdk17'        // Manage Jenkins -> Global Tool Configuration
+    maven 'maven3'
+  }
+
+  environment {
+    ACR_NAME        = 'petclinicacr9999'
+    ACR_LOGIN_SERVER= 'petclinicacr9999.azurecr.io'
+    IMAGE_NAME      = 'petclinic'
+    SONARQUBE_SERVER= 'sonarqube'
+    SONAR_PROJECT_KEY = 'petclinic'
+  }
+
+  stages {
+    stage('Checkout') {
+      steps { checkout scm }
+    }
+
+    stage('Build & Test') {
+      steps {
+        sh 'mvn -B -DskipTests=false clean verify'
+      }
+      post {
+        always {
+          junit 'target/surefire-reports/*.xml'
+        }
+      }
+    }
+
+    stage('SonarQube Analysis') {
+      steps {
+        withSonarQubeEnv("sonarqube") {
+          withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]]) {
+            sh """
+              mvn sonar:sonar                 -Dsonar.projectKey='petclinic'                 -Dsonar.login='${SONAR_TOKEN}'
+            """
+          }
+        }
+      }
+    }
+
+    stage('Quality Gate') {
+      steps {
+        timeout(time: 10, unit: 'MINUTES') {
+          waitForQualityGate abortPipeline: true
+        }
+      }
+    }
+
+    stage('Package JAR') {
+      steps {
+        sh 'mvn -B -DskipTests package'
+        archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
+      }
+    }
+
+    stage('Docker Build') {
+      steps {
+        script {
+          env.GIT_COMMIT_SHORT = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
+          env.IMAGE_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT_SHORT}"
+          env.IMAGE_REF = "petclinicacr9999.azurecr.io/petclinic:${env.IMAGE_TAG}"
+        }
+        sh 'docker version'
+        sh "docker build -t ${env.IMAGE_REF} ."
+      }
+    }
+
+    stage('Trivy Scan') {
+      steps {
+        sh """
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock             aquasec/trivy:latest image             --exit-code 1             --severity HIGH,CRITICAL             ${env.IMAGE_REF}
+        """
+      }
+    }
+
+    stage('Login to ACR & Push') {
+      steps {
+        withCredentials([string(credentialsId: 'azure-sp-jenkins', variable: 'AZURE_CREDENTIALS_JSON')]]) {
+          sh """
+            echo "$AZURE_CREDENTIALS_JSON" > azure.json
+            CLIENT_ID=$(jq -r .clientId azure.json)
+            CLIENT_SECRET=$(jq -r .clientSecret azure.json)
+            TENANT_ID=$(jq -r .tenantId azure.json)
+            SUBSCRIPTION_ID=$(jq -r .subscriptionId azure.json)
+
+            az login --service-principal --username "$CLIENT_ID" --password "$CLIENT_SECRET" --tenant "$TENANT_ID" >/dev/null
+            az account set --subscription "$SUBSCRIPTION_ID"
+
+            az acr login -n petclinicacr9999
+            docker push ${env.IMAGE_REF}
+            rm -f azure.json
+          """
+        }
+      }
+    }
+  }
+
+  post {
+    success {
+      echo "CI success: ${env.IMAGE_REF}"
+      // Example: trigger CD job automatically
+      // build job: 'petclinic-cd', parameters: [string(name:'IMAGE_TAG', value: env.IMAGE_TAG)]
+    }
+    failure { echo 'CI failed.' }
+  }
+}
