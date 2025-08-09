@@ -104,15 +104,17 @@ stage('Docker Build') {
 
 
 
-   stage('Trivy Scan') {
-  steps {
-    bat """
-      echo Scanning %IMAGE_REF%
-      trivy --version
-      trivy image --exit-code 1 --severity HIGH,CRITICAL %IMAGE_REF%
-    """
-  }
-}
+     stage('Trivy Scan (Docker)') {
+      steps {
+        // Use Dockerized Trivy so nothing to install on Windows.
+        bat """
+          echo Scanning %IMAGE_REF%
+          docker run --rm ^
+            -v //./pipe/docker_engine:/var/run/docker.sock ^
+            aquasec/trivy:latest image --exit-code 1 --severity HIGH,CRITICAL %IMAGE_REF%
+        """
+      }
+    }
 
     stage('Login to ACR & Push') {
   steps {
