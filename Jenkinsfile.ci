@@ -27,7 +27,7 @@ pipeline {
 
     stage('Build & Test') {
       steps {
-        sh 'mvn -B -DskipTests=false clean verify'
+        bat 'mvn -B -DskipTests=false clean verify'
       }
       post {
         always {
@@ -40,7 +40,7 @@ pipeline {
       steps {
         withSonarQubeEnv("sonarqube") {
           withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-            sh """
+            bat """
               mvn sonar:sonar                 -Dsonar.projectKey='petclinic'                 -Dsonar.login='${SONAR_TOKEN}'
             """
           }
@@ -58,7 +58,7 @@ pipeline {
 
     stage('Package JAR') {
       steps {
-        sh 'mvn -B -DskipTests package'
+        bat 'mvn -B -DskipTests package'
         archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
       }
     }
@@ -66,18 +66,18 @@ pipeline {
     stage('Docker Build') {
       steps {
         script {
-          env.GIT_COMMIT_SHORT = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
+          env.GIT_COMMIT_SHORT = bat(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
           env.IMAGE_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT_SHORT}"
           env.IMAGE_REF = "petclinicacr9999.azurecr.io/petclinic:${env.IMAGE_TAG}"
         }
-        sh 'docker version'
-        sh "docker build -t ${env.IMAGE_REF} ."
+        bat 'docker version'
+        bat "docker build -t ${env.IMAGE_REF} ."
       }
     }
 
     stage('Trivy Scan') {
       steps {
-        sh """
+        bat """
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock             aquasec/trivy:latest image             --exit-code 1             --severity HIGH,CRITICAL             ${env.IMAGE_REF}
         """
       }
@@ -91,7 +91,7 @@ pipeline {
         "ACR_NAME=${env.ACR_NAME}",
         "IMAGE_REF=${env.IMAGE_REF}"
       ]) {
-        sh '''#!/usr/bin/env bash
+        bat '''#!/usr/bin/env bash
 set -euo pipefail
 
 echo "$AZURE_CREDENTIALS_JSON" > azure.json
