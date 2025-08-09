@@ -91,11 +91,13 @@ stage('Compute Image Tag') {
 }
 stage('Docker Build') {
   steps {
-    bat """
+    bat '''
+      for /f %%i in ('git rev-parse --short HEAD') do set GIT_COMMIT_SHORT=%%i
+      set IMAGE_TAG=%BUILD_NUMBER%-%GIT_COMMIT_SHORT%
+      set IMAGE_REF=%ACR_LOGIN_SERVER%/%IMAGE_NAME%:%IMAGE_TAG%
       echo Building %IMAGE_REF%
       docker build -t %IMAGE_REF% .
-      docker images %IMAGE_REF%
-    """
+    '''
   }
 }
 
