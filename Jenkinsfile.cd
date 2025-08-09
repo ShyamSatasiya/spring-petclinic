@@ -16,8 +16,9 @@ pipeline {
   }
 
   parameters {
-    string(name: 'IMAGE_TAG', defaultValue: '28-04b3cc9', description: 'Image tag to deploy (from CI output).')
-  }
+  string(name: 'IMAGE_TAG', defaultValue: '28-04b3cc9',
+         description: 'Tag to deploy (use the exact tag printed by CI).')
+}
 
   stages {
     stage('Checkout') {
