@@ -79,58 +79,55 @@ stage('SonarQube Analysis') {
         archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
       }
     }
-
+stage('Compute Image Tag') {
+  steps {
+    script {
+      def shortSha = bat(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
+      env.IMAGE_TAG = "${env.BUILD_NUMBER}-${shortSha}"
+      env.IMAGE_REF = "${env.ACR_LOGIN_SERVER}/${env.IMAGE_NAME}:${env.IMAGE_TAG}"
+      echo "IMAGE_REF = ${env.IMAGE_REF}"
+    }
+  }
+}
 stage('Docker Build') {
   steps {
-    bat '''
-      for /f %%i in ('git rev-parse --short HEAD') do set GIT_COMMIT_SHORT=%%i
-      set IMAGE_TAG=%BUILD_NUMBER%-%GIT_COMMIT_SHORT%
-      set IMAGE_REF=%ACR_LOGIN_SERVER%/%IMAGE_NAME%:%IMAGE_TAG%
+    bat """
       echo Building %IMAGE_REF%
       docker build -t %IMAGE_REF% .
-    '''
+      docker images %IMAGE_REF%
+    """
   }
 }
 
 
 
 
-    stage('Trivy Scan') {
-      steps {
-        bat """
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock             aquasec/trivy:latest image             --exit-code 1             --severity HIGH,CRITICAL             ${env.IMAGE_REF}
-        """
-      }
-    }
+   stage('Trivy Scan') {
+  steps {
+    bat """
+      echo Scanning %IMAGE_REF%
+      trivy --version
+      trivy image --exit-code 1 --severity HIGH,CRITICAL %IMAGE_REF%
+    """
+  }
+}
 
     stage('Login to ACR & Push') {
   steps {
-    withCredentials([string(credentialsId: 'azure-sp-jenkins', variable: 'AZURE_CREDENTIALS_JSON')]) {
-      // pass Groovy env vars to the shell safely
-      withEnv([
-        "ACR_NAME=${env.ACR_NAME}",
-        "IMAGE_REF=${env.IMAGE_REF}"
-      ]) {
-        bat '''#!/usr/bin/env bash
-set -euo pipefail
-
-echo "$AZURE_CREDENTIALS_JSON" > azure.json
-CLIENT_ID=$(jq -r .clientId azure.json)
-CLIENT_SECRET=$(jq -r .clientSecret azure.json)
-TENANT_ID=$(jq -r .tenantId azure.json)
-SUBSCRIPTION_ID=$(jq -r .subscriptionId azure.json)
-
-az login --service-principal --username "$CLIENT_ID" --password "$CLIENT_SECRET" --tenant "$TENANT_ID" >/dev/null
-az account set --subscription "$SUBSCRIPTION_ID"
-
-az acr login -n "$ACR_NAME"
-docker push "$IMAGE_REF"
-rm -f azure.json
-'''
-      }
+    withCredentials([string(credentialsId: 'azure-sp-jenkins', variable: 'AZURE_JSON')]) {
+      powershell """
+        Set-Content -Path azure.json -Value \$env:AZURE_JSON
+        \$creds = Get-Content azure.json | ConvertFrom-Json
+        az login --service-principal --username \$creds.clientId --password \$creds.clientSecret --tenant \$creds.tenantId | Out-Null
+        az account set --subscription \$creds.subscriptionId
+        az acr login -n ${env.ACR_NAME}
+      """
+      bat "docker push %IMAGE_REF%"
+      powershell 'Remove-Item azure.json -Force'
     }
   }
 }
+
 
   }
 
