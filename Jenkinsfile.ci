@@ -98,12 +98,11 @@ stage('Docker Build') {
     """
   }
 }
-}
 
 
 
 
- stage('Trivy Scan (Docker)') {
+    stage('Trivy Scan (Docker)') {
   steps {
     bat """
       echo Scanning %IMAGE_REF%
@@ -141,4 +140,4 @@ stage('Docker Build') {
     }
     failure { echo 'CI failed.' }
   }
-
+}
