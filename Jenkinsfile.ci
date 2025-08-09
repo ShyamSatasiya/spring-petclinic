@@ -82,18 +82,16 @@ stage('SonarQube Analysis') {
 
 stage('Docker Build') {
   steps {
-    script {
-      // Get short commit id safely on Windows
-      def shortSha = bat(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
-      env.IMAGE_TAG = "${env.BUILD_NUMBER}-${shortSha}"
-      env.IMAGE_REF = "${env.ACR_LOGIN_SERVER}/${env.IMAGE_NAME}:${env.IMAGE_TAG}"
-    }
-    bat """
+    bat '''
+      for /f %%i in ('git rev-parse --short HEAD') do set GIT_COMMIT_SHORT=%%i
+      set IMAGE_TAG=%BUILD_NUMBER%-%GIT_COMMIT_SHORT%
+      set IMAGE_REF=%ACR_LOGIN_SERVER%/%IMAGE_NAME%:%IMAGE_TAG%
       echo Building %IMAGE_REF%
       docker build -t %IMAGE_REF% .
-    """
+    '''
   }
 }
+
 
 
 
