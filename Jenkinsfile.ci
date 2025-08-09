@@ -91,30 +91,28 @@ stage('Compute Image Tag') {
 }
 stage('Docker Build') {
   steps {
-    bat '''
-      for /f %%i in ('git rev-parse --short HEAD') do set GIT_COMMIT_SHORT=%%i
-      set IMAGE_TAG=%BUILD_NUMBER%-%GIT_COMMIT_SHORT%
-      set IMAGE_REF=%ACR_LOGIN_SERVER%/%IMAGE_NAME%:%IMAGE_TAG%
+    bat """
       echo Building %IMAGE_REF%
       docker build -t %IMAGE_REF% .
-    '''
+      docker images %IMAGE_REF%
+    """
   }
+}
 }
 
 
 
 
-     stage('Trivy Scan (Docker)') {
-      steps {
-        // Use Dockerized Trivy so nothing to install on Windows.
-        bat """
-          echo Scanning %IMAGE_REF%
-          docker run --rm ^
-            -v //./pipe/docker_engine:/var/run/docker.sock ^
-            aquasec/trivy:latest image --exit-code 1 --severity HIGH,CRITICAL %IMAGE_REF%
-        """
-      }
-    }
+ stage('Trivy Scan (Docker)') {
+  steps {
+    bat """
+      echo Scanning %IMAGE_REF%
+      docker run --rm ^
+        -v //./pipe/docker_engine:/var/run/docker.sock ^
+        aquasec/trivy:latest image --exit-code 1 --severity HIGH,CRITICAL %IMAGE_REF%
+    """
+  }
+}
 
     stage('Login to ACR & Push') {
   steps {
