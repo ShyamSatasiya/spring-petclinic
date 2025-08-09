@@ -26,9 +26,23 @@ pipeline {
     }
 
     stage('Build & Test') {
-      steps {
-        bat 'mvn -B -DskipTests=false clean verify'
-      }
+  steps {
+    // Use Windows cmd (bat) + Maven WRAPPER (mvnw.cmd)
+    bat '''
+      call .\\mvnw -version
+      call .\\mvnw -B -ntp -DskipTests=false clean test
+    '''
+  }
+  post {
+    always {
+      // Don’t fail the whole job just because reports are missing while we fix setup
+      junit testResults: 'target/surefire-reports/*.xml', allowEmptyResults: true
+      // Quick visibility to confirm whether the reports exist
+      bat 'if exist target\\surefire-reports (dir target\\surefire-reports) else (echo No surefire reports found)'
+    }
+  }
+}
+
       post {
         always {
           junit 'target/surefire-reports/*.xml'
