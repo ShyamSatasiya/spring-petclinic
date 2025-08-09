@@ -81,16 +81,20 @@ stage('SonarQube Analysis') {
     }
 
     stage('Docker Build') {
-      steps {
-        script {
-          env.GIT_COMMIT_SHORT = bat(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
-          env.IMAGE_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT_SHORT}"
-          env.IMAGE_REF = "petclinicacr9999.azurecr.io/petclinic:${env.IMAGE_TAG}"
-        }
-        bat 'docker version'
-        bat "docker build -t ${env.IMAGE_REF} ."
-      }
+    steps {
+    script {
+      // Get short commit on Windows using bat + capture output
+      def shortSha = bat(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+      env.IMAGE_TAG = "${env.BUILD_NUMBER}-${shortSha}"
+      env.IMAGE_REF = "${env.ACR_LOGIN_SERVER}/${env.IMAGE_NAME}:${env.IMAGE_TAG}"
     }
+    bat """
+      echo Building %IMAGE_REF%
+      docker build -t %IMAGE_REF% .
+    """
+  }
+}
+
 
     stage('Trivy Scan') {
       steps {
