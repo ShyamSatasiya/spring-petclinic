@@ -118,19 +118,27 @@ stage('Docker Build') {
 
     stage('Login to ACR & Push') {
   steps {
+    // Login to Azure & ACR (PowerShell)
     withCredentials([string(credentialsId: 'azure-sp-jenkins', variable: 'AZURE_JSON')]) {
       powershell """
         Set-Content -Path azure.json -Value \$env:AZURE_JSON
-        \$creds = Get-Content azure.json | ConvertFrom-Json
-        az login --service-principal --username \$creds.clientId --password \$creds.clientSecret --tenant \$creds.tenantId | Out-Null
-        az account set --subscription \$creds.subscriptionId
+        \$c = Get-Content azure.json | ConvertFrom-Json
+        az login --service-principal --username \$c.clientId --password \$c.clientSecret --tenant \$c.tenantId | Out-Null
+        az account set --subscription \$c.subscriptionId
         az acr login -n ${env.ACR_NAME}
       """
-      bat "docker push %IMAGE_REF%"
-      powershell 'Remove-Item azure.json -Force'
     }
+    // Recompute the tag INSIDE this bat block and push
+    bat '''
+      for /f %%i in ('git rev-parse --short HEAD') do set GIT_COMMIT_SHORT=%%i
+      set IMAGE_TAG=%BUILD_NUMBER%-%GIT_COMMIT_SHORT%
+      set IMAGE_REF=%ACR_LOGIN_SERVER%/%IMAGE_NAME%:%IMAGE_TAG%
+      echo Pushing %IMAGE_REF%
+      docker push %IMAGE_REF%
+    '''
   }
 }
+
 
 
   }
