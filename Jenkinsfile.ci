@@ -91,27 +91,41 @@ stage('Compute Image Tag') {
 }
 stage('Docker Build') {
   steps {
-    bat """
+    bat '''
+      for /f %%i in ('git rev-parse --short HEAD') do set GIT_COMMIT_SHORT=%%i
+      set IMAGE_TAG=%BUILD_NUMBER%-%GIT_COMMIT_SHORT%
+      set IMAGE_REF=%ACR_LOGIN_SERVER%/%IMAGE_NAME%:%IMAGE_TAG%
       echo Building %IMAGE_REF%
       docker build -t %IMAGE_REF% .
-      docker images %IMAGE_REF%
-    """
+
+      rem --- persist for later stages ---
+      >  image.env echo IMAGE_TAG=%IMAGE_TAG%
+      >> image.env echo IMAGE_REF=%IMAGE_REF%
+    '''
+    script {
+      def props = readProperties file: 'image.env'
+      env.IMAGE_TAG = props.IMAGE_TAG
+      env.IMAGE_REF = props.IMAGE_REF
+      echo "IMAGE_REF = ${env.IMAGE_REF}"
+    }
   }
 }
 
 
 
 
-    stage('Trivy Scan (Docker)') {
-  steps {
-    bat """
-      echo Scanning %IMAGE_REF%
-      docker run --rm ^
-        -v //./pipe/docker_engine:/var/run/docker.sock ^
-        aquasec/trivy:latest image --exit-code 1 --severity HIGH,CRITICAL %IMAGE_REF%
-    """
-  }
-}
+
+     stage('Trivy Scan (Docker)') {
+      steps {
+        // Use Dockerized Trivy so nothing to install on Windows.
+        bat """
+          echo Scanning %IMAGE_REF%
+          docker run --rm ^
+            -v //./pipe/docker_engine:/var/run/docker.sock ^
+            aquasec/trivy:latest image --exit-code 1 --severity HIGH,CRITICAL %IMAGE_REF%
+        """
+      }
+    }
 
     stage('Login to ACR & Push') {
   steps {
