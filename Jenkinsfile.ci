@@ -43,13 +43,6 @@ pipeline {
   }
 }
 
-      post {
-        always {
-          junit 'target/surefire-reports/*.xml'
-        }
-      }
-    }
-
     stage('SonarQube Analysis') {
       steps {
         withSonarQubeEnv("sonarqube") {
@@ -136,4 +129,4 @@ rm -f azure.json
     }
     failure { echo 'CI failed.' }
   }
-
+}
