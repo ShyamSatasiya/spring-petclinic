@@ -4,20 +4,19 @@ pipeline {
   options {
     skipDefaultCheckout(true)
     timestamps()
-    ansiColor('xterm')
   }
 
   environment {
-    RG = 'rg-petclinic'
-    AKS = 'aks-petclinic'
-    ACR_NAME = 'petclinicacr9999'
+    RG               = 'rg-petclinic'
+    AKS              = 'aks-petclinic'
+    ACR_NAME         = 'petclinicacr9999'
     ACR_LOGIN_SERVER = 'petclinicacr9999.azurecr.io'
-    IMAGE_NAME = 'petclinic'
-    NAMESPACE = 'petclinic'
+    IMAGE_NAME       = 'petclinic'
+    NAMESPACE        = 'petclinic'
   }
 
   parameters {
-    string(name: 'IMAGE_TAG', defaultValue: 'latest', description: 'Tag to deploy (from CI output).')
+    string(name: 'IMAGE_TAG', defaultValue: 'latest', description: 'Image tag to deploy (from CI output).')
   }
 
   stages {
@@ -27,60 +26,63 @@ pipeline {
 
     stage('Azure Login & KubeConfig') {
       steps {
-        withCredentials([string(credentialsId: 'azure-sp-jenkins', variable: 'AZURE_CREDENTIALS_JSON')]]) {
-          sh """
-            echo "$AZURE_CREDENTIALS_JSON" > azure.json
-            CLIENT_ID=$(jq -r .clientId azure.json)
-            CLIENT_SECRET=$(jq -r .clientSecret azure.json)
-            TENANT_ID=$(jq -r .tenantId azure.json)
-            SUBSCRIPTION_ID=$(jq -r .subscriptionId azure.json)
-
-            az login --service-principal --username "$CLIENT_ID" --password "$CLIENT_SECRET" --tenant "$TENANT_ID" >/dev/null
-            az account set --subscription "$SUBSCRIPTION_ID"
-            az aks get-credentials -g rg-petclinic -n aks-petclinic --overwrite-existing
-            rm -f azure.json
+        withCredentials([string(credentialsId: 'azure-sp-jenkins', variable: 'AZURE_CREDENTIALS_JSON')]) {
+          powershell '''
+            Set-StrictMode -Version Latest
+            $c = $env:AZURE_CREDENTIALS_JSON | ConvertFrom-Json
+            az login --service-principal --username $c.clientId --password $c.clientSecret --tenant $c.tenantId | Out-Null
+            az account set --subscription $c.subscriptionId
+            az aks get-credentials -g $env:RG -n $env:AKS --overwrite-existing
             kubectl version --client
-          """
+          '''
         }
       }
     }
 
     stage('Create Namespace') {
       steps {
-        sh 'kubectl apply -f k8s/namespace.yaml'
+        bat 'kubectl apply -f k8s\\namespace.yaml'
       }
     }
 
     stage('Render & Apply Manifests') {
       steps {
-        sh """
-          sed "s|<ACR_LOGIN_SERVER>|petclinicacr9999.azurecr.io|g; s|<TAG>|${params.IMAGE_TAG}|g"             k8s/deployment.yaml > k8s/deployment.rendered.yaml
-          kubectl apply -f k8s/deployment.rendered.yaml
-          kubectl apply -f k8s/service.yaml
+        // Render deployment.rendered.yaml by replacing placeholders with real values (Windows-safe)
+        powershell """
+          (Get-Content 'k8s/deployment.yaml') `
+            -replace '<ACR_LOGIN_SERVER>','${env.ACR_LOGIN_SERVER}' `
+            -replace '<TAG>','${params.IMAGE_TAG}' `
+            | Set-Content 'k8s/deployment.rendered.yaml'
         """
+        bat '''
+          kubectl apply -f k8s\\deployment.rendered.yaml
+          kubectl apply -f k8s\\service.yaml
+        '''
       }
     }
 
     stage('Rollout Status') {
       steps {
-        sh "kubectl -n petclinic rollout status deploy/petclinic --timeout=180s"
+        bat "kubectl -n %NAMESPACE% rollout status deploy/%IMAGE_NAME% --timeout=180s"
       }
     }
 
     stage('Show Service') {
       steps {
-        sh "kubectl get svc -n petclinic -o wide"
+        bat "kubectl get svc -n %NAMESPACE% -o wide"
       }
     }
   }
 
   post {
-    success { echo "CD success: Deployed petclinicacr9999.azurecr.io/petclinic:${params.IMAGE_TAG}" }
+    success {
+      echo "CD success: Deployed ${env.ACR_LOGIN_SERVER}/${env.IMAGE_NAME}:${params.IMAGE_TAG}"
+    }
     failure {
       echo 'CD failed — diagnostics:'
-      sh "kubectl get pods -n petclinic; true"
-      sh "kubectl describe deploy/petclinic -n petclinic; true"
-      sh "kubectl get events -n petclinic --sort-by=.lastTimestamp | tail -n 50; true"
+      bat "kubectl get pods -n %NAMESPACE% || ver"
+      bat "kubectl describe deploy/%IMAGE_NAME% -n %NAMESPACE% || ver"
+      bat "kubectl get events -n %NAMESPACE% --sort-by=.lastTimestamp | tail -n 50 || ver"
     }
   }
 }
