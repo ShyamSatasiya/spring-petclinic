@@ -141,4 +141,4 @@ stage('Docker Build') {
     }
     failure { echo 'CI failed.' }
   }
-}
+
